@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<title>Arc Quest — Testnet Demo (Bridge · Send · Stake · Play)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!--
+  Güvenlik başlığı (CSP): Betikleri kendi dosyamız + sabitlenmiş ethers.js CDN sürümüyle
+  sınırlar, dış kaynaklardan script/obje yüklenmesini ve sayfanın iframe'de açılmasını engeller.
+  Tek dosya tasarımı korunduğu için satır içi <script>/<style> bloklarına izin verilir
+  (unsafe-inline), ama script kaynağı yalnızca bu sayfa ve jsdelivr ile sınırlıdır.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.gstatic.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+  connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com https://rpc.testnet.arc.network https://iris-api-sandbox.circle.com https://cdn.jsdelivr.net https://firestore.googleapis.com https://*.googleapis.com;
+  frame-ancestors 'none';
+  base-uri 'self';
+  object-src 'none';
+  form-action 'none';
+">
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --bg:#0a0e17;
+    --bg-card:#131a2a;
+    --bg-card-2:#0f1524;
+    --border:#232c42;
+    --text:#e7ecf7;
+    --text-dim:#8b95ab;
+    --accent:#5b8cff;
+    --accent-2:#7c5bff;
+    --good:#31d17c;
+    --bad:#ff5b6e;
+    --warn:#ffb84d;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #1a2440 0%, transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, #241a40 0%, transparent 55%),
+      var(--bg);
+    color:var(--text);
+    min-height:100vh;
+  }
+  a{color:var(--accent);}
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 28px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:rgba(10,14,23,0.85);backdrop-filter:blur(8px);z-index:50;
+  }
+  .brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:20px;}
+  .brand img{width:36px;height:36px;border-radius:10px;object-fit:cover;}
+  #wallet-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .pill{
+    padding:8px 14px;border-radius:999px;background:var(--bg-card);
+    border:1px solid var(--border);font-size:13px;color:var(--text-dim);
+  }
+  .pill.network-ok{color:var(--good);border-color:#1e4a34;}
+  .pill.network-bad{color:var(--warn);border-color:#4a3a1e;}
+  button{
+    font-family:inherit;cursor:pointer;border:none;border-radius:12px;
+    padding:11px 18px;font-size:14px;font-weight:600;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    color:#fff;transition:transform .12s ease, opacity .12s ease;
+  }
+  button:hover{transform:translateY(-1px);}
+  button:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+  button.secondary{background:var(--bg-card);border:1px solid var(--border);color:var(--text);}
+  button.danger{background:linear-gradient(135deg,#ff5b6e,#ff8a5b);}
+  button.small{padding:7px 12px;font-size:12.5px;border-radius:10px;}
+  .lang-switch{display:flex;gap:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;padding:3px;}
+  .lang-btn{
+    background:transparent;color:var(--text-dim);padding:5px 11px;border-radius:999px;
+    font-size:12px;font-weight:700;
+  }
+  .lang-btn:hover{transform:none;color:var(--text);}
+  .lang-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;}
+  .hero{
+    text-align:center;padding:56px 20px 30px;
+  }
+  .hero img{
+    width:100%;max-width:640px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.5);
+    margin-bottom:18px;border:1px solid var(--border);
+  }
+  .hero h1{font-size:34px;margin:0 0 8px;}
+  .hero p{color:var(--text-dim);max-width:560px;margin:0 auto;line-height:1.6;}
+  main{max-width:960px;margin:0 auto;padding:10px 20px 80px;display:flex;flex-direction:column;gap:26px;}
+  .card{
+    background:linear-gradient(180deg,var(--bg-card),var(--bg-card-2));
+    border:1px solid var(--border);border-radius:var(--radius);padding:26px;
+  }
+  .card h2{margin:0 0 4px;font-size:20px;display:flex;align-items:center;gap:10px;}
+  .card .sub{color:var(--text-dim);font-size:13.5px;margin:0 0 18px;line-height:1.5;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+  .field{flex:1;min-width:220px;display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12.5px;color:var(--text-dim);}
+  input[type=text], input[type=number]{
+    background:#0c1120;border:1px solid var(--border);border-radius:10px;
+    padding:11px 12px;color:var(--text);font-size:14px;width:100%;
+  }
+  input:focus{outline:none;border-color:var(--accent);}
+  .badge{
+    font-size:11px;padding:3px 9px;border-radius:999px;background:#1c2438;color:var(--text-dim);
+    border:1px solid var(--border);
+  }
+  .badge.live{color:var(--good);border-color:#1e4a34;}
+  .badge.config{color:var(--warn);border-color:#4a3a1e;}
+  .steps{margin-top:16px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim);}
+  .step{display:flex;gap:8px;align-items:flex-start;}
+  .step .dot{width:8px;height:8px;border-radius:50%;background:var(--border);margin-top:5px;flex-shrink:0;}
+  .step.active .dot{background:var(--accent);}
+  .step.done .dot{background:var(--good);}
+  .step.error .dot{background:var(--bad);}
+  .notice{
+    font-size:13px;padding:12px 14px;border-radius:10px;margin-top:14px;
+    background:#1c1608;border:1px solid #4a3a1e;color:var(--warn);
+  }
+  .notice.error{background:#210f13;border-color:#5a1e28;color:var(--bad);}
+  .notice.success{background:#0d1f16;border-color:#1e4a34;color:var(--good);}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
+  .stat{background:#0c1120;border:1px solid var(--border);border-radius:12px;padding:14px;}
+  .stat .label{font-size:11.5px;color:var(--text-dim);}
+  .stat .value{font-size:18px;font-weight:700;margin-top:4px;}
+
+  /* Puzzle */
+  #puzzle-wrap{display:flex;flex-direction:column;align-items:center;gap:16px;}
+  #puzzle-timer{font-size:32px;font-weight:800;letter-spacing:1px;}
+  #puzzle-timer.warn{color:var(--warn);}
+  #puzzle-timer.danger{color:var(--bad);}
+  #puzzle-stage{position:relative;}
+  #puzzle-grid{
+    display:grid;grid-template-columns:repeat(3,110px);grid-template-rows:repeat(2,110px);
+    gap:4px;background:#000;border-radius:14px;overflow:hidden;border:2px solid var(--border);
+  }
+  .puzzle-piece{
+    position:relative;
+    width:110px;height:110px;background-repeat:no-repeat;cursor:pointer;
+    background-size:330px 220px;
+    outline-offset:-3px;transition:outline .1s ease, filter .1s ease;
+  }
+  .puzzle-piece.selected{outline:3px solid var(--accent);filter:brightness(1.15);}
+  .puzzle-piece:hover{filter:brightness(1.1);}
+  .puzzle-piece .num{
+    position:absolute;top:4px;left:4px;min-width:18px;text-align:center;
+    background:rgba(0,0,0,.65);color:#fff;font-size:11px;font-weight:700;
+    border-radius:5px;padding:1px 4px;pointer-events:none;
+  }
+  #puzzle-overlay{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    text-align:center;padding:16px;background:rgba(6,9,16,.82);border-radius:14px;
+    cursor:pointer;font-size:14px;color:var(--text);font-weight:600;line-height:1.5;
+  }
+  #puzzle-overlay.hidden{display:none;}
+  #puzzle-result{min-height:24px;font-weight:600;}
+  #puzzle-result.win{color:var(--good);}
+  #puzzle-result.lose{color:var(--bad);}
+
+  /* Liderlik tablosu */
+  #leaderboard-table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  #leaderboard-table th{
+    text-align:left;color:var(--text-dim);font-weight:600;font-size:11.5px;
+    text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid var(--border);
+  }
+  #leaderboard-table td{padding:10px;border-bottom:1px solid var(--border);}
+  #leaderboard-table tr:last-child td{border-bottom:none;}
+  #leaderboard-table tr.me{background:rgba(91,140,255,0.08);}
+  .rank-badge{
+    display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+    border-radius:50%;background:#1c2438;font-size:12px;font-weight:700;color:var(--text-dim);
+  }
+  .rank-badge.gold{background:linear-gradient(135deg,#ffd76a,#ffb020);color:#2b1a00;}
+  .rank-badge.silver{background:linear-gradient(135deg,#e4e8f0,#b7c0d1);color:#20242e;}
+  .rank-badge.bronze{background:linear-gradient(135deg,#e0a978,#b9713c);color:#2b1a00;}
+  #leaderboard-empty{color:var(--text-dim);font-size:13px;padding:14px 0;}
+
+  footer{text-align:center;color:var(--text-dim);font-size:12.5px;padding:26px;border-top:1px solid var(--border);}
+  code{background:#0c1120;padding:2px 6px;border-radius:6px;font-size:12px;}
+</style>
+</head>
+<body>
+
+<div id="testnet-banner" style="background:#3a2a00;border-bottom:2px solid #ffb84d;color:#ffd76a;text-align:center;font-weight:700;font-size:14px;padding:10px 16px;">
+  ⚠️ TESTNET DEMO — Gerçek para değeri yoktur. Bu sayfa gerçek varlık transferi yapmaz, sadece test ağı (Sepolia / Arc Testnet) üzerinde çalışır.
+</div>
+
+<header>
+  <div class="brand">
+    <img id="brand-logo" src="" alt="logo" />
+    <span>Arc Quest</span>
+  </div>
+  <div id="wallet-bar">
+    <div class="lang-switch">
+      <button id="lang-tr-btn" class="lang-btn active" type="button">TR</button>
+      <button id="lang-en-btn" class="lang-btn" type="button">EN</button>
+    </div>
+    <button id="switch-sepolia-btn" class="secondary small" type="button">Sepolia</button>
+    <button id="switch-arc-btn" class="secondary small" type="button">Arc Testnet</button>
+    <span id="network-pill" class="pill">Ağ yok</span>
+    <button id="connect-btn">Cüzdanı Bağla</button>
+  </div>
+</header>
+
+<div class="hero">
+  <img id="hero-image" src="" alt="Arc Quest" />
+  <h1>Arc Quest</h1>
+  <p id="hero-desc">Sepolia ⇄ Arc Testnet arası USDC köprüle, istediğin adrese USDC gönder, USDC stake ederek getiri kazan
+     ve 5 saniyelik pazılı çözerek 0.5 USDC ödülünü topla.</p>
+</div>
+
+<main>
+
+  <!-- BRIDGE -->
+  <section class="card" id="bridge-card">
+    <h2>🌉 <span id="bridge-title">Bridge</span> <span id="bridge-badge" class="badge live">Gerçek CCTP V2</span></h2>
+    <p class="sub" id="bridge-sub">Circle'ın CCTP V2 protokolü ile seçili kaynak ağdaki USDC'yi burn edip hedef ağda
+      kendi adresine mint eder. Testnet USDC gerekir (<a href="https://faucet.circle.com/" target="_blank" rel="noopener noreferrer">Circle Faucet</a>).</p>
+    <div class="row" style="margin-bottom:6px;">
+      <button id="bridge-direction-btn" class="secondary" type="button">Sepolia → Arc Testnet ⇄</button>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label id="bridge-amount-label">Miktar (USDC)</label>
+        <input type="number" id="bridge-amount" placeholder="10" min="0" step="0.01" />
+      </div>
+      <button id="bridge-btn">Köprüle</button>
+    </div>
+    <div class="steps" id="bridge-steps"></div>
+    <div id="bridge-notice"></div>
+  </section>
+
+  <!-- SEND -->
+  <section class="card" id="send-card">
+    <h2>💸 <span id="send-title">USDC Gönder</span> <span id="send-badge" class="badge config">Testnet aracı</span></h2>
+    <p class="sub" id="send-sub">⚠️ Bu bir testnet aracıdır — sadece test ağındaki değersiz test-USDC'sini gönderir, gerçek varlık değildir. Bağlı olduğun ağdaki USDC'yi istediğin herhangi bir EVM adresine gönder.</p>
+    <div class="row">
+      <div class="field">
+        <label id="send-to-label">Alıcı EVM Adresi</label>
+        <input type="text" id="send-to" placeholder="0x..." />
+      </div>
+      <div class="field" style="max-width:160px;">
+        <label id="send-amount-label">Miktar (USDC)</label>
+        <input type="number" id="send-amount" placeholder="5" min="0" step="0.01" />
+      </div>
+      <button id="send-btn">Gönder</button>
+    </div>
+    <div id="send-notice"></div>
+  </section>
+
+  <!-- STAKE -->
+  <section class="card" id="stake-card">
+    <h2>📈 <span id="stake-title">USDC Stake</span> <span id="stake-config-badge" class="badge config">Kontrat yapılandırılmadı</span></h2>
+    <p class="sub"><span id="stake-sub-a">Arc Testnet üzerinde USDC stake ederek sabit</span> <b id="apy-label">%8 APY</b>
+      <span id="stake-sub-b">getiri kazan. Ödül, biriken süreye göre USDC olarak hesaplanır. (StakingPool.sol deploy edilip</span>
+      <code>CONFIG.CONTRACTS.stakingPool</code> <span id="stake-sub-c">alanına adresi girilmeli.)</span></p>
+    <div class="stat-grid">
+      <div class="stat"><div class="label" id="stat-principal-label">Stake Edilen</div><div class="value" id="stat-principal">—</div></div>
+      <div class="stat"><div class="label" id="stat-rewards-label">Bekleyen Ödül</div><div class="value" id="stat-rewards">—</div></div>
+      <div class="stat"><div class="label">APY</div><div class="value" id="stat-apy">—</div></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label id="stake-amount-label">Miktar (USDC)</label>
+        <input type="number" id="stake-amount" placeholder="20" min="0" step="0.01" />
+      </div>
+      <button id="stake-btn">Stake Et</button>
+      <button id="unstake-btn" class="secondary">Unstake</button>
+      <button id="claim-stake-btn" class="secondary">Ödülü Claim Et</button>
+    </div>
+    <div id="stake-notice"></div>
+  </section>
+
+  <!-- PUZZLE -->
+  <section class="card" id="puzzle-card">
+    <h2>🧩 <span id="puzzle-title">5 Saniyelik Pazıl</span> <span id="puzzle-config-badge" class="badge config">Kontrat yapılandırılmadı</span></h2>
+    <p class="sub" id="puzzle-sub"></p>
+    <div id="puzzle-wrap">
+      <div id="puzzle-timer">5</div>
+      <div id="puzzle-stage">
+        <div id="puzzle-grid"></div>
+        <div id="puzzle-overlay">Karıştırıp süreyi başlatmak için<br/>buraya ya da "Başla / Karıştır" butonuna tıkla</div>
+      </div>
+      <div id="puzzle-result"></div>
+      <div class="row">
+        <button id="puzzle-start-btn">Başla / Karıştır</button>
+        <button id="puzzle-claim-btn" class="secondary" disabled>0.5 USDC Claim Et</button>
+      </div>
+      <div id="puzzle-notice"></div>
+    </div>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section class="card" id="leaderboard-card">
+    <h2>🏆 <span id="leaderboard-title">Liderlik Tablosu</span> <span id="leaderboard-config-badge" class="badge config">Firebase yapılandırılmadı</span></h2>
+    <p class="sub" id="leaderboard-sub">Pazılı en hızlı çözüp ödülünü claim edenlerin ilk 10 sırası — hangi bilgisayardan bakarsan bak aynı tabloyu görürsün.</p>
+    <table id="leaderboard-table">
+      <thead>
+        <tr>
+          <th id="lb-th-rank">#</th>
+          <th id="lb-th-address">Adres</th>
+          <th id="lb-th-time">Süre</th>
+          <th id="lb-th-date">Tarih</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+    <div id="leaderboard-empty">—</div>
+  </section>
+
+</main>
+
+<footer id="footer-text">
+  Arc Quest — testnet demo. Gerçek para değeri yoktur. Bridge işlemleri Circle CCTP V2 üzerinden gerçek
+  testnet işlemleridir; stake ve pazıl ödülleri için ayrıca kontrat deploy etmen gerekir (bkz. KURULUM.md).
+</footer>
+
+<script>
+/* =========================================================================
+   CONFIG — kendi değerlerinizle güncelleyin
+   ========================================================================= */
+const CONFIG = {
+  // Kullanıcının site tasarımında ve pazılda kullanılacak görseli.
+  // Görseli "hero.jpg" adıyla bu dosyayla aynı klasöre koyup burada yolunu güncelleyin.
+  HERO_IMAGE_URL: "hero.jpg",
+  // Görsel bulunamazsa otomatik olarak kullanılacak yedek (data URI, üretken gradient).
+  FALLBACK_IMAGE_URL:
+    "data:image/svg+xml;utf8," + encodeURIComponent(`
+      <svg xmlns='http://www.w3.org/2000/svg' width='640' height='420'>
+        <defs>
+          <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
+            <stop offset='0%' stop-color='#5b8cff'/>
+            <stop offset='100%' stop-color='#7c5bff'/>
+          </linearGradient>
+        </defs>
+        <rect width='640' height='420' fill='url(#g)'/>
+        <circle cx='320' cy='170' r='90' fill='none' stroke='white' stroke-width='22' stroke-linecap='round'
+          stroke-dasharray='430 180' transform='rotate(-45 320 170)'/>
+        <text x='320' y='330' font-family='Segoe UI,Arial' font-size='34' fill='white'
+          text-anchor='middle' font-weight='700'>ARC QUEST</text>
+      </svg>`),
+
+  NETWORKS: {
+    sepolia: {
+      key: "sepolia",
+      chainIdHex: "0xaa36a7",
+      chainIdDec: 11155111,
+      name: "Ethereum Sepolia",
+      rpcUrls: ["https://ethereum-sepolia-rpc.publicnode.com"],
+      explorer: "https://sepolia.etherscan.io",
+      nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
+      usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      usdcDecimals: 6,
+      cctpDomain: 0
+    },
+    arc: {
+      key: "arc",
+      chainIdHex: "0x4cef52",
+      chainIdDec: 5042002,
+      name: "Arc Testnet",
+      rpcUrls: ["https://rpc.testnet.arc.network"],
+      explorer: "https://testnet.arcscan.app",
+      // Arc testnet'te gas ücretleri native USDC ile ödenir (18 ondalık, EVM native temsil).
+      nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+      // Bu ise CCTP ile köprülenen standart ERC-20 USDC kontratı (6 ondalık).
+      usdc: "0x3600000000000000000000000000000000000000",
+      usdcDecimals: 6,
+      cctpDomain: 26
+    }
+  },
+
+  CCTP: {
+    tokenMessenger: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    messageTransmitter: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    irisApi: "https://iris-api-sandbox.circle.com",
+    minFinalityThreshold: 1000 // fast transfer
+  },
+
+  // ↓↓↓ Aşağıdaki iki adresi, PuzzleRewardPool.sol ve StakingPool.sol'u Arc Testnet'e
+  // deploy ettikten sonra doldurun (bkz. KURULUM.md). Boş bırakılırsa ilgili
+  // bölümler arayüzde "yapılandırılmadı" uyarısıyla pasif görünür.
+  CONTRACTS: {
+    stakingPool: "0x8D77715fD829Db3Fd503f434546f636286DA6240",
+    puzzleRewardPool: "0x78cE544B8439B3e47D962B6b8003a8e9F038317C"
+  },
+
+  STAKE_APY_LABEL: "%8",
+  // Pazıl ödülü artık özel bir ARC jetonu değil, gerçek USDC (6 ondalık).
+  PUZZLE: { rows: 2, cols: 3, seconds: 5, rewardAmountUsdc: 0.5 },
+
+  // ↓↓↓ Firebase konsolundan aldığın "firebaseConfig" değerlerini buraya yapıştır
+  // (bkz. KURULUM.md). Boş bırakılırsa liderlik tablosu "yapılandırılmadı" görünür.
+  FIREBASE: {
+    apiKey: "AIzaSyCB7RxKhrVfSEbthU8yUumZ0WjdVWon4QE",
+    authDomain: "arc-quest.firebaseapp.com",
+    projectId: "arc-quest",
+    storageBucket: "arc-quest.firebasestorage.app",
+    messagingSenderId: "410289991555",
+    appId: "1:410289991555:web:478eace2be93ba8b9190b6"
+  },
+  LEADERBOARD_LIMIT: 10
+};
+
+/* =========================================================================
+   ABI'ler
+   ========================================================================= */
+const ERC20_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function transfer(address,uint256) returns (bool)",
+  "function approve(address,uint256) returns (bool)",
+  "function allowance(address,address) view returns (uint256)"
+];
+const TOKEN_MESSENGER_ABI = [
+  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold)"
+];
+const MESSAGE_TRANSMITTER_ABI = [
+  "function receiveMessage(bytes message, bytes attestation) returns (bool)"
+];
+const STAKING_ABI = [
+  "function stake(uint256)",
+  "function unstake(uint256)",
+  "function claim()",
+  "function pendingRewards(address) view returns (uint256)",
+  "function stakes(address) view returns (uint256 principal, uint256 lastUpdate, uint256 accruedRewards)",
+  "function apyBps() view returns (uint256)"
+];
+const POOL_ABI = [
+  "function claim()",
+  "function nextClaimAt(address) view returns (uint256)",
+  "function cooldown() view returns (uint256)",
+  "function rewardAmount() view returns (uint256)",
+  "function poolBalance() view returns (uint256)"
+];
+
+/* =========================================================================
+   Global state
+   ========================================================================= */
+let provider = null;
+let signer = null;
+let userAddress = null;
+let currentChainIdDec = null;
+let bridgeDirection = "sepoliaToArc"; // veya "arcToSepolia"
+let currentLang = "tr";
+
+const $ = (id) => document.getElementById(id);
+
+/** Aktif dile göre metin döndürür: t("Türkçe metin", "English text") */
+function t(tr, en) {
+  return currentLang === "en" ? en : tr;
+}
+
+/**
+ * Güvenlik: innerHTML içine yerleştirdiğimiz her dinamik değeri (hata mesajları,
+ * cüzdan/RPC/harici API'den gelen metinler, tx hash'leri) HTML olarak değil düz
+ * metin olarak kaçış yaparak ekliyoruz. Bu, kötü niyetli bir RPC yanıtının veya
+ * hata mesajının sayfaya script/HTML enjekte etmesini (XSS) engeller.
+ */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/* =========================================================================
+   Dil (TR / EN)
+   ========================================================================= */
+// id -> { tr: "...", en: "..." } eşlemesi. textContent olarak uygulanır
+// (etiket/başlık/rozet gibi tek parça metinler için).
+const STATIC_TEXT = {
+  "connect-btn-idle": { tr: "Cüzdanı Bağla", en: "Connect Wallet" },
+  "switch-sepolia-btn": { tr: "Sepolia", en: "Sepolia" },
+  "switch-arc-btn": { tr: "Arc Testnet", en: "Arc Testnet" },
+  "hero-desc": {
+    tr: "Sepolia ⇄ Arc Testnet arası USDC köprüle, istediğin adrese USDC gönder, USDC stake ederek getiri kazan ve 5 saniyelik pazılı çözerek 0.5 USDC ödülünü topla.",
+    en: "Bridge USDC between Sepolia and Arc Testnet, send USDC to any address, stake USDC to earn yield, and solve the 5-second puzzle to win 0.5 USDC."
+  },
+  "bridge-title": { tr: "Bridge", en: "Bridge" },
+  "bridge-badge": { tr: "Gerçek CCTP V2", en: "Real CCTP V2" },
+  "bridge-sub": {
+    tr: "Circle'ın CCTP V2 protokolü ile seçili kaynak ağdaki USDC'yi burn edip hedef ağda kendi adresine mint eder. Testnet USDC gerekir.",
+    en: "Using Circle's CCTP V2 protocol, burns USDC on the selected source chain and mints it to your own address on the destination chain. Requires testnet USDC."
+  },
+  "bridge-amount-label": { tr: "Miktar (USDC)", en: "Amount (USDC)" },
+  "bridge-btn": { tr: "Köprüle", en: "Bridge" },
+  "send-title": { tr: "USDC Gönder", en: "Send USDC" },
+  "send-badge": { tr: "Testnet aracı", en: "Testnet tool" },
+  "send-sub": {
+    tr: "⚠️ Bu bir testnet aracıdır — sadece test ağındaki değersiz test-USDC'sini gönderir, gerçek varlık değildir. Bağlı olduğun ağdaki USDC'yi istediğin herhangi bir EVM adresine gönder.",
+    en: "⚠️ This is a testnet-only tool — it sends worthless test USDC on the test network, not real assets. Send USDC on your currently connected network to any EVM address."
+  },
+  "send-to-label": { tr: "Alıcı EVM Adresi", en: "Recipient EVM Address" },
+  "send-amount-label": { tr: "Miktar (USDC)", en: "Amount (USDC)" },
+  "send-btn": { tr: "Gönder", en: "Send" },
+  "stake-title": { tr: "USDC Stake", en: "Stake USDC" },
+  "stake-sub-a": { tr: "Arc Testnet üzerinde USDC stake ederek sabit", en: "Stake USDC on Arc Testnet to earn a fixed" },
+  "stake-sub-b": {
+    tr: "getiri kazan. Ödül, biriken süreye göre USDC olarak hesaplanır. (StakingPool.sol deploy edilip",
+    en: "yield. Rewards accrue over time and are paid in USDC. (Deploy StakingPool.sol and enter its address in"
+  },
+  "stake-sub-c": { tr: "alanına adresi girilmeli.)", en: ".)" },
+  "stat-principal-label": { tr: "Stake Edilen", en: "Staked" },
+  "stat-rewards-label": { tr: "Bekleyen Ödül", en: "Pending Reward" },
+  "stake-amount-label": { tr: "Miktar (USDC)", en: "Amount (USDC)" },
+  "stake-btn": { tr: "Stake Et", en: "Stake" },
+  "unstake-btn": { tr: "Unstake", en: "Unstake" },
+  "claim-stake-btn": { tr: "Ödülü Claim Et", en: "Claim Reward" },
+  "puzzle-start-btn": { tr: "Başla / Karıştır", en: "Start / Shuffle" },
+  "leaderboard-title": { tr: "Liderlik Tablosu", en: "Leaderboard" },
+  "leaderboard-sub": {
+    tr: "Pazılı en hızlı çözüp ödülünü claim edenlerin ilk 10 sırası — hangi bilgisayardan bakarsan bak aynı tabloyu görürsün.",
+    en: "Top 10 fastest puzzle solvers who claimed their reward — the same table shows up no matter which computer you check from."
+  },
+  "lb-th-rank": { tr: "#", en: "#" },
+  "lb-th-address": { tr: "Adres", en: "Address" },
+  "lb-th-time": { tr: "Süre", en: "Time" },
+  "lb-th-date": { tr: "Tarih", en: "Date" },
+  "footer-text": {
+    tr: "Arc Quest — testnet demo. Gerçek para değeri yoktur. Bridge işlemleri Circle CCTP V2 üzerinden gerçek testnet işlemleridir; stake ve pazıl ödülleri için ayrıca kontrat deploy etmen gerekir (bkz. KURULUM.md).",
+    en: "Arc Quest — testnet demo. Has no real monetary value. Bridge transactions are real testnet transactions via Circle CCTP V2; stake and puzzle rewards require deploying separate contracts (see KURULUM.md)."
+  }
+};
+
+function setLanguage(lang) {
+  currentLang = lang === "en" ? "en" : "tr";
+  $("lang-tr-btn").classList.toggle("active", currentLang === "tr");
+  $("lang-en-btn").classList.toggle("active", currentLang === "en");
+
+  Object.keys(STATIC_TEXT).forEach((id) => {
+    if (id === "connect-btn-idle") return; // ayrıca ele alınıyor
+    const el = $(id);
+    if (el) el.textContent = STATIC_TEXT[id][currentLang];
+  });
+
+  // Cüzdan bağlı değilse buton metnini güncelle; bağlıysa kısa adres kalsın.
+  if (!signer) {
+    $("connect-btn").textContent = STATIC_TEXT["connect-btn-idle"][currentLang];
+  }
+
+  updateNetworkPill();
+  updateBridgeDirectionUI();
+  updatePuzzleInstructions();
+  refreshStakeStats();
+  initPuzzleBadge();
+  updatePuzzleClaimButtonLabel();
+  resetPuzzleOverlayText();
+  initFirebase();
+}
+
+/* =========================================================================
+   Görsel yükleme (hero + logo + pazıl kaynağı ortak)
+   ========================================================================= */
+function loadHeroImage() {
+  const img = new Image();
+  img.onload = () => {
+    $("hero-image").src = CONFIG.HERO_IMAGE_URL;
+    $("brand-logo").src = CONFIG.HERO_IMAGE_URL;
+    initPuzzle(CONFIG.HERO_IMAGE_URL);
+  };
+  img.onerror = () => {
+    $("hero-image").src = CONFIG.FALLBACK_IMAGE_URL;
+    $("brand-logo").src = CONFIG.FALLBACK_IMAGE_URL;
+    initPuzzle(CONFIG.FALLBACK_IMAGE_URL);
+  };
+  img.src = CONFIG.HERO_IMAGE_URL;
+}
+
+/* =========================================================================
+   Cüzdan bağlantısı & ağ yönetimi
+   ========================================================================= */
+
+// Bazı tarayıcılarda birden fazla cüzdan uzantısı (MetaMask + Coinbase Wallet vb.)
+// window.ethereum'u paylaşıp çakışabiliyor (EIP-5749 çoklu sağlayıcı). Mümkünse
+// MetaMask'ı seçip kullanıyoruz, yoksa bulduğumuz ilk sağlayıcıyı kullanırız.
+function getEthProvider() {
+  if (!window.ethereum) return null;
+  if (Array.isArray(window.ethereum.providers) && window.ethereum.providers.length) {
+    return window.ethereum.providers.find(p => p.isMetaMask) || window.ethereum.providers[0];
+  }
+  return window.ethereum;
+}
+
+async function connectWallet() {
+  const eth = getEthProvider();
+  if (!eth) {
+    alert(t(
+      "MetaMask (veya başka bir EVM cüzdanı) bulunamadı. Lütfen tarayıcı eklentisini kurun ve sayfayı yenileyin.",
+      "MetaMask (or another EVM wallet) was not found. Please install the browser extension and refresh the page."
+    ));
+    return;
+  }
+  try {
+    await eth.request({ method: "eth_requestAccounts" });
+    provider = new ethers.BrowserProvider(eth);
+    signer = await provider.getSigner();
+    userAddress = await signer.getAddress();
+    const net = await provider.getNetwork();
+    currentChainIdDec = Number(net.chainId);
+
+    $("connect-btn").textContent = shortAddr(userAddress);
+    updateNetworkPill();
+    refreshStakeStats();
+    updatePuzzleClaimAvailability();
+
+    eth.on("accountsChanged", () => window.location.reload());
+    eth.on("chainChanged", () => window.location.reload());
+  } catch (err) {
+    console.error(err);
+    if (err.code === -32002) {
+      alert(t(
+        "MetaMask'ta zaten bekleyen bir bağlantı isteği var. Tarayıcıdaki MetaMask ikonuna tıklayıp açılan pencereyi onayla/kapat, sonra tekrar dene.",
+        "MetaMask already has a pending connection request. Click the MetaMask icon, approve/dismiss the popup, then try again."
+      ));
+    } else if (err.code === 4001) {
+      alert(t("Bağlantı isteğini reddettin. Tekrar denemek için butona bas.", "You rejected the connection request. Click the button to try again."));
+    } else {
+      alert(t("Cüzdan bağlanamadı: ", "Could not connect wallet: ") + (err.message || err));
+    }
+  }
+}
+
+/** Cüzdan bağlı değilse önce bağlanır, sonra istenen ağa geçer. */
+async function quickSwitchNetwork(netKey) {
+  try {
+    if (!signer) {
+      await connectWallet();
+      if (!signer) return; // kullanıcı reddettiyse ya da cüzdan yoksa dur
+    }
+    await ensureNetwork(netKey);
+    refreshStakeStats();
+    updatePuzzleClaimAvailability();
+  } catch (err) {
+    console.error(err);
+    alert(t("Ağ değiştirilemedi: ", "Could not switch network: ") + (err.message || err));
+  }
+}
+
+function shortAddr(addr) {
+  return addr.slice(0, 6) + "…" + addr.slice(-4);
+}
+
+function updateNetworkPill() {
+  const pill = $("network-pill");
+  const net = Object.values(CONFIG.NETWORKS).find(n => n.chainIdDec === currentChainIdDec);
+  if (net) {
+    pill.textContent = net.name; // ağ adları özel isim, çevrilmez
+    pill.className = "pill network-ok";
+  } else if (currentChainIdDec === null) {
+    pill.textContent = t("Ağ yok", "No network");
+    pill.className = "pill";
+  } else {
+    pill.textContent = t("Desteklenmeyen ağ", "Unsupported network");
+    pill.className = "pill network-bad";
+  }
+}
+
+async function ensureNetwork(netKey) {
+  const net = CONFIG.NETWORKS[netKey];
+  const eth = getEthProvider();
+  if (!eth) throw new Error("Cüzdan bulunamadı");
+  try {
+    await eth.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: net.chainIdHex }]
+    });
+  } catch (switchErr) {
+    if (switchErr.code === 4902) {
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: net.chainIdHex,
+          chainName: net.name,
+          nativeCurrency: net.nativeCurrency,
+          rpcUrls: net.rpcUrls,
+          blockExplorerUrls: [net.explorer]
+        }]
+      });
+    } else {
+      throw switchErr;
+    }
+  }
+  provider = new ethers.BrowserProvider(eth);
+  signer = await provider.getSigner();
+  currentChainIdDec = net.chainIdDec;
+  updateNetworkPill();
+}
+
+/* =========================================================================
+   BRIDGE — CCTP V2 (Sepolia -> Arc Testnet)
+   ========================================================================= */
+function renderBridgeSteps(steps, activeIndex, errorIndex) {
+  const el = $("bridge-steps");
+  el.innerHTML = "";
+  steps.forEach((label, i) => {
+    const div = document.createElement("div");
+    let cls = "step";
+    if (errorIndex === i) cls += " error";
+    else if (i < activeIndex) cls += " done";
+    else if (i === activeIndex) cls += " active";
+    div.className = cls;
+    div.innerHTML = `<span class="dot"></span><span>${label}</span>`;
+    el.appendChild(div);
+  });
+}
+
+function addrToBytes32(addr) {
+  return ethers.zeroPadValue(ethers.getAddress(addr), 32);
+}
+
+/** Şu anki köprü yönüne göre kaynak/hedef ağ bilgisini döndürür. */
+function getBridgeSrcDst() {
+  if (bridgeDirection === "sepoliaToArc") {
+    return { src: CONFIG.NETWORKS.sepolia, dst: CONFIG.NETWORKS.arc, srcKey: "sepolia", dstKey: "arc" };
+  }
+  return { src: CONFIG.NETWORKS.arc, dst: CONFIG.NETWORKS.sepolia, srcKey: "arc", dstKey: "sepolia" };
+}
+
+function toggleBridgeDirection() {
+  bridgeDirection = bridgeDirection === "sepoliaToArc" ? "arcToSepolia" : "sepoliaToArc";
+  updateBridgeDirectionUI();
+  $("bridge-notice").innerHTML = "";
+  $("bridge-steps").innerHTML = "";
+}
+
+function updateBridgeDirectionUI() {
+  const { src, dst } = getBridgeSrcDst();
+  $("bridge-direction-btn").textContent = `${src.name} → ${dst.name}  ⇄`;
+}
+
+async function pollAttestation(sourceDomain, txHash, onTick) {
+  const url = `${CONFIG.CCTP.irisApi}/v2/messages/${sourceDomain}?transactionHash=${txHash}`;
+  const maxTries = 60; // ~ 3 dakika
+  for (let i = 0; i < maxTries; i++) {
+    onTick(i);
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const msg = data && data.messages && data.messages[0];
+        if (msg && msg.status === "complete" && msg.attestation && msg.attestation !== "PENDING") {
+          return msg;
+        }
+      }
+    } catch (e) {
+      console.warn("attestation poll hatası", e);
+    }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  throw new Error("Attestation zaman aşımına uğradı, daha sonra tekrar deneyin.");
+}
+
+async function bridgeUSDC() {
+  const notice = $("bridge-notice");
+  notice.innerHTML = "";
+  const amountStr = $("bridge-amount").value;
+  if (!amountStr || Number(amountStr) <= 0) {
+    notice.innerHTML = `<div class="notice error">${t("Geçerli bir miktar girin.", "Enter a valid amount.")}</div>`;
+    return;
+  }
+  if (!signer) {
+    notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`;
+    return;
+  }
+
+  const { src, dst, srcKey, dstKey } = getBridgeSrcDst();
+
+  const steps = [
+    t(`${src.name} ağına geçiliyor`, `Switching to ${src.name}`),
+    t("USDC harcama izni (approve) veriliyor", "Approving USDC spend"),
+    t("depositForBurn işlemi gönderiliyor", "Sending depositForBurn transaction"),
+    t("Circle attestation bekleniyor", "Waiting for Circle attestation"),
+    t(`${dst.name} ağına geçiliyor`, `Switching to ${dst.name}`),
+    t(`${dst.name}'te USDC mint ediliyor (receiveMessage)`, `Minting USDC on ${dst.name} (receiveMessage)`)
+  ];
+  let stepIdx = 0;
+  renderBridgeSteps(steps, stepIdx);
+  $("bridge-btn").disabled = true;
+
+  try {
+    await ensureNetwork(srcKey);
+    stepIdx = 1; renderBridgeSteps(steps, stepIdx);
+
+    const usdc = new ethers.Contract(src.usdc, ERC20_ABI, signer);
+    const amount = ethers.parseUnits(amountStr, src.usdcDecimals);
+
+    const bal = await usdc.balanceOf(userAddress);
+    if (bal < amount) {
+      throw new Error(t(
+        `${src.name} üzerinde yeterli USDC bakiyen yok. Circle faucet'ten test USDC alabilirsin.`,
+        `You don't have enough USDC on ${src.name}. You can get test USDC from the Circle faucet.`
+      ));
+    }
+
+    const allowance = await usdc.allowance(userAddress, CONFIG.CCTP.tokenMessenger);
+    if (allowance < amount) {
+      const approveTx = await usdc.approve(CONFIG.CCTP.tokenMessenger, amount);
+      await approveTx.wait();
+    }
+
+    stepIdx = 2; renderBridgeSteps(steps, stepIdx);
+    const tokenMessenger = new ethers.Contract(CONFIG.CCTP.tokenMessenger, TOKEN_MESSENGER_ABI, signer);
+    const mintRecipient = addrToBytes32(userAddress);
+    const destinationCaller = ethers.ZeroHash;
+    // Basit demo sezgisi: %0.5 tampon fee. Gerçek ücret genelde bundan düşüktür.
+    const maxFee = amount / 200n > 0n ? amount / 200n : 1n;
+
+    const burnTx = await tokenMessenger.depositForBurn(
+      amount,
+      dst.cctpDomain,
+      mintRecipient,
+      src.usdc,
+      destinationCaller,
+      maxFee,
+      CONFIG.CCTP.minFinalityThreshold
+    );
+    const burnReceipt = await burnTx.wait();
+
+    stepIdx = 3; renderBridgeSteps(steps, stepIdx);
+    notice.innerHTML = `<div class="notice">${t("Tx gönderildi:", "Tx sent:")} <a href="${src.explorer}/tx/${burnReceipt.hash}" target="_blank" rel="noopener noreferrer">${escapeHtml(burnReceipt.hash)}</a><br/>${t("Attestation bekleniyor, bu 10-30 saniye sürebilir…", "Waiting for attestation, this can take 10-30 seconds…")}</div>`;
+
+    const attested = await pollAttestation(src.cctpDomain, burnReceipt.hash, () => {});
+
+    stepIdx = 4; renderBridgeSteps(steps, stepIdx);
+    await ensureNetwork(dstKey);
+
+    stepIdx = 5; renderBridgeSteps(steps, stepIdx);
+    const messageTransmitter = new ethers.Contract(CONFIG.CCTP.messageTransmitter, MESSAGE_TRANSMITTER_ABI, signer);
+    const mintTx = await messageTransmitter.receiveMessage(attested.message, attested.attestation);
+    const mintReceipt = await mintTx.wait();
+
+    renderBridgeSteps(steps, steps.length);
+    notice.innerHTML = `<div class="notice success">${t("Köprüleme tamamlandı!", "Bridging complete!")} ${dst.name} ${t("işlemi:", "tx:")}
+      <a href="${dst.explorer}/tx/${mintReceipt.hash}" target="_blank" rel="noopener noreferrer">${escapeHtml(mintReceipt.hash)}</a></div>`;
+    refreshStakeStats();
+  } catch (err) {
+    console.error(err);
+    renderBridgeSteps(steps, stepIdx, stepIdx);
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(err.message || err)}</div>`;
+  } finally {
+    $("bridge-btn").disabled = false;
+  }
+}
+
+/* =========================================================================
+   SEND — bağlı ağdaki USDC'yi istenen adrese gönder
+   ========================================================================= */
+async function sendUSDC() {
+  const notice = $("send-notice");
+  notice.innerHTML = "";
+  const to = $("send-to").value.trim();
+  const amountStr = $("send-amount").value;
+
+  if (!signer) { notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`; return; }
+  if (!ethers.isAddress(to)) { notice.innerHTML = `<div class="notice error">${t("Geçerli bir EVM adresi gir.", "Enter a valid EVM address.")}</div>`; return; }
+  if (!amountStr || Number(amountStr) <= 0) { notice.innerHTML = `<div class="notice error">${t("Geçerli bir miktar gir.", "Enter a valid amount.")}</div>`; return; }
+
+  const net = Object.values(CONFIG.NETWORKS).find(n => n.chainIdDec === currentChainIdDec);
+  if (!net) { notice.innerHTML = `<div class="notice error">${t("Desteklenen bir ağda değilsin (Sepolia veya Arc Testnet'e geç).", "You're not on a supported network (switch to Sepolia or Arc Testnet).")}</div>`; return; }
+
+  $("send-btn").disabled = true;
+  try {
+    const usdc = new ethers.Contract(net.usdc, ERC20_ABI, signer);
+    const amount = ethers.parseUnits(amountStr, net.usdcDecimals);
+    const bal = await usdc.balanceOf(userAddress);
+    if (bal < amount) throw new Error(t(`${net.name} üzerinde yeterli USDC bakiyen yok.`, `You don't have enough USDC on ${net.name}.`));
+
+    const tx = await usdc.transfer(to, amount);
+    notice.innerHTML = `<div class="notice">${t("İşlem gönderildi, onay bekleniyor…", "Transaction sent, waiting for confirmation…")}</div>`;
+    const receipt = await tx.wait();
+    notice.innerHTML = `<div class="notice success">${t("Gönderildi!", "Sent!")} <a href="${net.explorer}/tx/${receipt.hash}" target="_blank" rel="noopener noreferrer">${escapeHtml(receipt.hash)}</a></div>`;
+  } catch (err) {
+    console.error(err);
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(err.message || err)}</div>`;
+  } finally {
+    $("send-btn").disabled = false;
+  }
+}
+
+/* =========================================================================
+   STAKE
+   ========================================================================= */
+function stakingConfigured() {
+  return CONFIG.CONTRACTS.stakingPool && ethers.isAddress(CONFIG.CONTRACTS.stakingPool);
+}
+
+async function refreshStakeStats() {
+  $("stat-apy").textContent = CONFIG.STAKE_APY_LABEL;
+  $("apy-label").textContent = CONFIG.STAKE_APY_LABEL + " APY";
+  if (stakingConfigured()) {
+    $("stake-config-badge").textContent = t("Kontrat aktif", "Contract active");
+    $("stake-config-badge").className = "badge live";
+  } else {
+    $("stake-config-badge").textContent = t("Kontrat yapılandırılmadı", "Contract not configured");
+    $("stake-config-badge").className = "badge config";
+    return;
+  }
+  if (!signer || currentChainIdDec !== CONFIG.NETWORKS.arc.chainIdDec) {
+    $("stat-principal").textContent = "—";
+    $("stat-rewards").textContent = "—";
+    return;
+  }
+  try {
+    const pool = new ethers.Contract(CONFIG.CONTRACTS.stakingPool, STAKING_ABI, provider);
+    const info = await pool.stakes(userAddress);
+    const pending = await pool.pendingRewards(userAddress);
+    const dec = CONFIG.NETWORKS.arc.usdcDecimals;
+    $("stat-principal").textContent = ethers.formatUnits(info.principal, dec) + " USDC";
+    $("stat-rewards").textContent = ethers.formatUnits(pending, dec) + " USDC";
+  } catch (e) {
+    console.warn("stake stats okunamadı", e);
+  }
+}
+
+async function stakeUSDC() {
+  const notice = $("stake-notice");
+  notice.innerHTML = "";
+  if (!stakingConfigured()) { notice.innerHTML = `<div class="notice error">${t("StakingPool kontratı henüz yapılandırılmadı (KURULUM.md).", "StakingPool contract is not configured yet (see KURULUM.md).")}</div>`; return; }
+  if (!signer) { notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`; return; }
+  const amountStr = $("stake-amount").value;
+  if (!amountStr || Number(amountStr) <= 0) { notice.innerHTML = `<div class="notice error">${t("Geçerli bir miktar gir.", "Enter a valid amount.")}</div>`; return; }
+
+  $("stake-btn").disabled = true;
+  try {
+    await ensureNetwork("arc");
+    const net = CONFIG.NETWORKS.arc;
+    const usdc = new ethers.Contract(net.usdc, ERC20_ABI, signer);
+    const pool = new ethers.Contract(CONFIG.CONTRACTS.stakingPool, STAKING_ABI, signer);
+    const amount = ethers.parseUnits(amountStr, net.usdcDecimals);
+
+    const allowance = await usdc.allowance(userAddress, CONFIG.CONTRACTS.stakingPool);
+    if (allowance < amount) {
+      const approveTx = await usdc.approve(CONFIG.CONTRACTS.stakingPool, amount);
+      await approveTx.wait();
+    }
+    const tx = await pool.stake(amount);
+    notice.innerHTML = `<div class="notice">${t("Stake işlemi gönderildi…", "Stake transaction sent…")}</div>`;
+    await tx.wait();
+    notice.innerHTML = `<div class="notice success">${t("Stake tamamlandı!", "Stake complete!")}</div>`;
+    refreshStakeStats();
+  } catch (err) {
+    console.error(err);
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(err.message || err)}</div>`;
+  } finally {
+    $("stake-btn").disabled = false;
+  }
+}
+
+async function unstakeUSDC() {
+  const notice = $("stake-notice");
+  notice.innerHTML = "";
+  if (!stakingConfigured()) { notice.innerHTML = `<div class="notice error">${t("StakingPool kontratı henüz yapılandırılmadı.", "StakingPool contract is not configured yet.")}</div>`; return; }
+  if (!signer) { notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`; return; }
+  const amountStr = $("stake-amount").value;
+  if (!amountStr || Number(amountStr) <= 0) { notice.innerHTML = `<div class="notice error">${t("Çekmek istediğin miktarı gir.", "Enter the amount you want to withdraw.")}</div>`; return; }
+
+  $("unstake-btn").disabled = true;
+  try {
+    await ensureNetwork("arc");
+    const net = CONFIG.NETWORKS.arc;
+    const pool = new ethers.Contract(CONFIG.CONTRACTS.stakingPool, STAKING_ABI, signer);
+    const amount = ethers.parseUnits(amountStr, net.usdcDecimals);
+    const tx = await pool.unstake(amount);
+    notice.innerHTML = `<div class="notice">${t("Unstake gönderildi…", "Unstake transaction sent…")}</div>`;
+    await tx.wait();
+    notice.innerHTML = `<div class="notice success">${t("Unstake tamamlandı!", "Unstake complete!")}</div>`;
+    refreshStakeStats();
+  } catch (err) {
+    console.error(err);
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(err.message || err)}</div>`;
+  } finally {
+    $("unstake-btn").disabled = false;
+  }
+}
+
+async function claimStakeRewards() {
+  const notice = $("stake-notice");
+  notice.innerHTML = "";
+  if (!stakingConfigured()) { notice.innerHTML = `<div class="notice error">${t("StakingPool kontratı henüz yapılandırılmadı.", "StakingPool contract is not configured yet.")}</div>`; return; }
+  if (!signer) { notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`; return; }
+
+  $("claim-stake-btn").disabled = true;
+  try {
+    await ensureNetwork("arc");
+    const pool = new ethers.Contract(CONFIG.CONTRACTS.stakingPool, STAKING_ABI, signer);
+    const tx = await pool.claim();
+    notice.innerHTML = `<div class="notice">${t("Claim gönderildi…", "Claim transaction sent…")}</div>`;
+    await tx.wait();
+    notice.innerHTML = `<div class="notice success">${t("Ödül claim edildi!", "Reward claimed!")}</div>`;
+    refreshStakeStats();
+  } catch (err) {
+    console.error(err);
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(err.message || err)}</div>`;
+  } finally {
+    $("claim-stake-btn").disabled = false;
+  }
+}
+
+/* =========================================================================
+   PUZZLE — 2x3, tıkla-değiştir, 15 saniye
+   ========================================================================= */
+let puzzleState = {
+  order: [],       // order[slotIndex] = pieceIndex
+  selected: null,
+  timer: null,
+  remaining: CONFIG.PUZZLE.seconds,
+  running: false,
+  won: false,
+  imageUrl: null,
+  solveSeconds: null // kazanılan tur kaç saniyede bitti (liderlik tablosu için)
+};
+
+function initPuzzle(imageUrl) {
+  puzzleState.imageUrl = imageUrl;
+  initPuzzleBadge();
+  updatePuzzleInstructions();
+  updatePuzzleClaimButtonLabel();
+  resetPuzzleOverlayText();
+  renderPuzzleGrid([0, 1, 2, 3, 4, 5]); // çözülmüş halde göster
+}
+
+function initPuzzleBadge() {
+  const badge = $("puzzle-config-badge");
+  if (!badge) return;
+  if (rewardPoolConfigured()) {
+    badge.textContent = t("Kontrat aktif", "Contract active");
+    badge.className = "badge live";
+  } else {
+    badge.textContent = t("Kontrat yapılandırılmadı", "Contract not configured");
+    badge.className = "badge config";
+  }
+}
+
+function updatePuzzleInstructions() {
+  const el = $("puzzle-sub");
+  if (!el) return;
+  const secs = CONFIG.PUZZLE.seconds;
+  const reward = CONFIG.PUZZLE.rewardAmountUsdc;
+  el.innerHTML = t(
+    `Nasıl oynanır: önce <b>"${STATIC_TEXT["puzzle-start-btn"].tr}"</b>a bas (parçalar karışır ve ${secs} saniyelik sayaç başlar). ` +
+    `Sonra bir parçaya tıkla (mavi çerçeve ile seçilir), ardından yerini değiştirmek istediğin ikinci parçaya tıkla — ikisi yer değiştirir. ` +
+    `Parçaların köşesindeki numaralar doğru sırayı gösterir (1'den 6'ya). Süre bitmeden 1-2-3 / 4-5-6 sırasını tamamlarsan kazanırsın ` +
+    `ve bağlı cüzdanına <b>${reward} USDC</b> claim edebilirsin.`,
+    `How to play: first click <b>"${STATIC_TEXT["puzzle-start-btn"].en}"</b> (pieces shuffle and a ${secs}-second timer starts). ` +
+    `Then click one piece (it gets a blue outline), then click a second piece to swap their positions. ` +
+    `The number in the corner of each piece shows its correct slot (1 to 6). If you complete the 1-2-3 / 4-5-6 order before time runs out, ` +
+    `you win and can claim <b>${reward} USDC</b> to your connected wallet.`
+  );
+}
+
+function updatePuzzleClaimButtonLabel() {
+  const btn = $("puzzle-claim-btn");
+  if (!btn) return;
+  btn.textContent = t(`${CONFIG.PUZZLE.rewardAmountUsdc} USDC Claim Et`, `Claim ${CONFIG.PUZZLE.rewardAmountUsdc} USDC`);
+}
+
+function resetPuzzleOverlayText() {
+  const overlay = $("puzzle-overlay");
+  if (!overlay) return;
+  // Sadece oyun çalışmıyorken (henüz başlamamış / karıştırma bekleniyorken) güncelle,
+  // aksi halde "süre doldu" mesajının üzerine yazmasın.
+  if (!puzzleState.running) {
+    overlay.innerHTML = t(
+      `Karıştırıp süreyi başlatmak için<br/>buraya ya da "${STATIC_TEXT["puzzle-start-btn"].tr}" butonuna tıkla`,
+      `Click here or the<br/>"${STATIC_TEXT["puzzle-start-btn"].en}" button to shuffle and start the timer`
+    );
+  }
+}
+
+function rewardPoolConfigured() {
+  return CONFIG.CONTRACTS.puzzleRewardPool && ethers.isAddress(CONFIG.CONTRACTS.puzzleRewardPool);
+}
+
+function shuffledOrder() {
+  const arr = [0, 1, 2, 3, 4, 5];
+  let solved = true;
+  while (solved) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    solved = arr.every((v, i) => v === i);
+  }
+  return arr;
+}
+
+function pieceBackgroundPosition(pieceIndex) {
+  const { rows, cols } = CONFIG.PUZZLE;
+  const col = pieceIndex % cols;
+  const row = Math.floor(pieceIndex / cols);
+  const x = (col * 100) / (cols - 1);
+  const y = (row * 100) / (rows - 1);
+  return `${x}% ${y}%`;
+}
+
+function renderPuzzleGrid(order) {
+  puzzleState.order = order.slice();
+  const grid = $("puzzle-grid");
+  grid.innerHTML = "";
+  order.forEach((pieceIndex, slotIndex) => {
+    const div = document.createElement("div");
+    div.className = "puzzle-piece";
+    div.dataset.slot = slotIndex;
+    div.style.backgroundImage = `url("${puzzleState.imageUrl}")`;
+    div.style.backgroundPosition = pieceBackgroundPosition(pieceIndex);
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = pieceIndex + 1;
+    div.appendChild(num);
+    div.addEventListener("click", () => onPieceClick(slotIndex));
+    grid.appendChild(div);
+  });
+}
+
+function onPieceClick(slotIndex) {
+  if (!puzzleState.running) return;
+  const grid = $("puzzle-grid");
+  const pieces = grid.children;
+
+  if (puzzleState.selected === null) {
+    puzzleState.selected = slotIndex;
+    pieces[slotIndex].classList.add("selected");
+    return;
+  }
+  if (puzzleState.selected === slotIndex) {
+    pieces[slotIndex].classList.remove("selected");
+    puzzleState.selected = null;
+    return;
+  }
+  // swap
+  const a = puzzleState.selected;
+  const b = slotIndex;
+  [puzzleState.order[a], puzzleState.order[b]] = [puzzleState.order[b], puzzleState.order[a]];
+  pieces[a].style.backgroundPosition = pieceBackgroundPosition(puzzleState.order[a]);
+  pieces[b].style.backgroundPosition = pieceBackgroundPosition(puzzleState.order[b]);
+  pieces[a].querySelector(".num").textContent = puzzleState.order[a] + 1;
+  pieces[b].querySelector(".num").textContent = puzzleState.order[b] + 1;
+  pieces[a].classList.remove("selected");
+  puzzleState.selected = null;
+
+  if (puzzleState.order.every((v, i) => v === i)) {
+    onPuzzleWin();
+  }
+}
+
+function startPuzzle() {
+  clearInterval(puzzleState.timer);
+  puzzleState.remaining = CONFIG.PUZZLE.seconds;
+  puzzleState.running = true;
+  puzzleState.won = false;
+  puzzleState.selected = null;
+  $("puzzle-result").textContent = "";
+  $("puzzle-result").className = "";
+  $("puzzle-claim-btn").disabled = true;
+  $("puzzle-notice").innerHTML = "";
+  $("puzzle-timer").className = "";
+  $("puzzle-timer").textContent = puzzleState.remaining;
+  $("puzzle-overlay").classList.add("hidden");
+
+  renderPuzzleGrid(shuffledOrder());
+
+  puzzleState.timer = setInterval(() => {
+    puzzleState.remaining--;
+    $("puzzle-timer").textContent = puzzleState.remaining;
+    if (puzzleState.remaining <= 5) $("puzzle-timer").className = "danger";
+    else if (puzzleState.remaining <= 8) $("puzzle-timer").className = "warn";
+    if (puzzleState.remaining <= 0) {
+      onPuzzleTimeout();
+    }
+  }, 1000);
+}
+
+function onPuzzleWin() {
+  puzzleState.running = false;
+  puzzleState.won = true;
+  clearInterval(puzzleState.timer);
+  const elapsed = CONFIG.PUZZLE.seconds - puzzleState.remaining;
+  puzzleState.solveSeconds = elapsed;
+  $("puzzle-result").textContent = t(`🎉 Kazandın! Süre: ${elapsed}sn`, `🎉 You won! Time: ${elapsed}s`);
+  $("puzzle-result").className = "win";
+  updatePuzzleClaimAvailability();
+}
+
+function onPuzzleTimeout() {
+  puzzleState.running = false;
+  clearInterval(puzzleState.timer);
+  $("puzzle-result").textContent = t("⏱️ Süre doldu. Tekrar dene!", "⏱️ Time's up. Try again!");
+  $("puzzle-result").className = "lose";
+  const overlay = $("puzzle-overlay");
+  overlay.textContent = t(
+    `Süre doldu — tekrar denemek için buraya ya da "${STATIC_TEXT["puzzle-start-btn"].tr}" butonuna tıkla`,
+    `Time's up — click here or the "${STATIC_TEXT["puzzle-start-btn"].en}" button to try again`
+  );
+  overlay.classList.remove("hidden");
+}
+
+function updatePuzzleClaimAvailability() {
+  const btn = $("puzzle-claim-btn");
+  btn.disabled = !(puzzleState.won && signer && rewardPoolConfigured());
+}
+
+async function claimPuzzleReward() {
+  const notice = $("puzzle-notice");
+  notice.innerHTML = "";
+  if (!puzzleState.won) { notice.innerHTML = `<div class="notice error">${t(`Önce pazılı ${CONFIG.PUZZLE.seconds} saniye içinde çöz.`, `First solve the puzzle within ${CONFIG.PUZZLE.seconds} seconds.`)}</div>`; return; }
+  if (!rewardPoolConfigured()) { notice.innerHTML = `<div class="notice error">${t("PuzzleRewardPool kontratı henüz yapılandırılmadı (KURULUM.md).", "PuzzleRewardPool contract is not configured yet (see KURULUM.md).")}</div>`; return; }
+  if (!signer) { notice.innerHTML = `<div class="notice error">${t("Önce cüzdanını bağla.", "Connect your wallet first.")}</div>`; return; }
+
+  $("puzzle-claim-btn").disabled = true;
+  try {
+    await ensureNetwork("arc");
+    const pool = new ethers.Contract(CONFIG.CONTRACTS.puzzleRewardPool, POOL_ABI, signer);
+    const tx = await pool.claim();
+    notice.innerHTML = `<div class="notice">${t("Claim gönderildi…", "Claim transaction sent…")}</div>`;
+    const receipt = await tx.wait();
+    notice.innerHTML = `<div class="notice success">${t(`${CONFIG.PUZZLE.rewardAmountUsdc} USDC kazandın!`, `You won ${CONFIG.PUZZLE.rewardAmountUsdc} USDC!`)} <a href="${CONFIG.NETWORKS.arc.explorer}/tx/${receipt.hash}" target="_blank" rel="noopener noreferrer">${escapeHtml(receipt.hash)}</a></div>`;
+    // Claim zincirde onaylandı = cüzdan sahipliği gerçek bir işlemle kanıtlandı,
+    // bu yüzden liderlik tablosuna skoru burada kaydediyoruz (sadece JS state değil).
+    if (typeof puzzleState.solveSeconds === "number") {
+      submitScore(userAddress, puzzleState.solveSeconds);
+    }
+  } catch (err) {
+    console.error(err);
+    let msg = err.message || String(err);
+    if (msg.includes("cooldown")) msg = t("Bu adres için bekleme süresi henüz dolmadı, daha sonra tekrar dene.", "This address's cooldown hasn't expired yet, try again later.");
+    notice.innerHTML = `<div class="notice error">${t("Hata:", "Error:")} ${escapeHtml(msg)}</div>`;
+  } finally {
+    $("puzzle-claim-btn").disabled = false;
+  }
+}
+
+/* =========================================================================
+   LEADERBOARD — Firebase Firestore (tüm cihazlardan görünen, paylaşımlı tablo)
+   ========================================================================= */
+let firebaseApp = null;
+let firestoreDb = null;
+let leaderboardUnsub = null;
+
+function firebaseConfigured() {
+  const cfg = CONFIG.FIREBASE;
+  return !!(cfg && cfg.apiKey && cfg.projectId && cfg.appId);
+}
+
+function initFirebase() {
+  const badge = $("leaderboard-config-badge");
+  if (!firebaseConfigured()) {
+    if (badge) {
+      badge.textContent = t("Firebase yapılandırılmadı", "Firebase not configured");
+      badge.className = "badge config";
+    }
+    const empty = $("leaderboard-empty");
+    if (empty) {
+      empty.textContent = t("Firebase henüz yapılandırılmadı (bkz. KURULUM.md).", "Firebase is not configured yet (see KURULUM.md).");
+      empty.style.display = "block";
+    }
+    return;
+  }
+  try {
+    if (typeof firebase === "undefined") throw new Error("Firebase SDK yüklenemedi");
+    if (!firebaseApp) {
+      firebaseApp = firebase.initializeApp(CONFIG.FIREBASE);
+      firestoreDb = firebase.firestore();
+    }
+    if (badge) {
+      badge.textContent = t("Canlı", "Live");
+      badge.className = "badge live";
+    }
+    subscribeLeaderboard();
+  } catch (e) {
+    console.error("Firebase başlatılamadı", e);
+    if (badge) {
+      badge.textContent = t("Bağlantı hatası", "Connection error");
+      badge.className = "badge config";
+    }
+  }
+}
+
+function subscribeLeaderboard() {
+  if (!firestoreDb) return;
+  if (leaderboardUnsub) {
+    leaderboardUnsub(); // dil değişince tekrar çağrılırsa eski dinleyiciyi kapat
+    leaderboardUnsub = null;
+  }
+  leaderboardUnsub = firestoreDb.collection("leaderboard")
+    .orderBy("seconds", "asc")
+    .limit(CONFIG.LEADERBOARD_LIMIT)
+    .onSnapshot(
+      (snapshot) => renderLeaderboard(snapshot.docs.map((d) => d.data())),
+      (err) => console.error("Liderlik tablosu okunamadı", err)
+    );
+}
+
+function renderLeaderboard(rows) {
+  const tbody = $("leaderboard-body");
+  const empty = $("leaderboard-empty");
+  if (!tbody || !empty) return;
+  tbody.innerHTML = "";
+
+  if (!rows.length) {
+    empty.textContent = t(
+      "Henüz kimse pazılı çözüp ödül claim etmedi — ilk sen ol!",
+      "No one has solved the puzzle and claimed a reward yet — be the first!"
+    );
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  const medalClass = ["gold", "silver", "bronze"];
+  rows.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    if (userAddress && row.address && String(row.address).toLowerCase() === userAddress.toLowerCase()) {
+      tr.classList.add("me");
+    }
+    const rankCls = medalClass[i] ? ` ${medalClass[i]}` : "";
+    let dateStr = "—";
+    if (row.timestamp && typeof row.timestamp.toDate === "function") {
+      dateStr = row.timestamp.toDate().toLocaleDateString(currentLang === "en" ? "en-US" : "tr-TR");
+    }
+    const tdRank = document.createElement("td");
+    tdRank.innerHTML = `<span class="rank-badge${rankCls}">${i + 1}</span>`;
+    const tdAddr = document.createElement("td");
+    tdAddr.textContent = row.address ? shortAddr(String(row.address)) : "—";
+    const tdTime = document.createElement("td");
+    tdTime.textContent = `${row.seconds}sn`;
+    const tdDate = document.createElement("td");
+    tdDate.textContent = dateStr;
+    tr.append(tdRank, tdAddr, tdTime, tdDate);
+    tbody.appendChild(tr);
+  });
+}
+
+/**
+ * Kullanıcı pazılı süresi içinde çözüp ödülü zincirde claim ettikten sonra çağrılır.
+ * Aynı adresin daha önce kaydı varsa, yalnızca YENİ süre daha iyiyse (daha kısaysa)
+ * günceller — yani tabloda her adresin en iyi derecesi görünür.
+ */
+async function submitScore(address, seconds) {
+  if (!firestoreDb || !address || typeof seconds !== "number") return;
+  try {
+    const docId = address.toLowerCase();
+    const ref = firestoreDb.collection("leaderboard").doc(docId);
+    const existing = await ref.get();
+    if (!existing.exists || seconds < existing.data().seconds) {
+      await ref.set({
+        address: address,
+        seconds: seconds,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch (e) {
+    console.error("Skor liderlik tablosuna kaydedilemedi", e);
+  }
+}
+
+/* =========================================================================
+   Wiring
+   ========================================================================= */
+$("connect-btn").addEventListener("click", connectWallet);
+$("bridge-btn").addEventListener("click", bridgeUSDC);
+$("bridge-direction-btn").addEventListener("click", toggleBridgeDirection);
+$("send-btn").addEventListener("click", sendUSDC);
+$("stake-btn").addEventListener("click", stakeUSDC);
+$("unstake-btn").addEventListener("click", unstakeUSDC);
+$("claim-stake-btn").addEventListener("click", claimStakeRewards);
+$("puzzle-start-btn").addEventListener("click", startPuzzle);
+$("puzzle-claim-btn").addEventListener("click", claimPuzzleReward);
+$("puzzle-overlay").addEventListener("click", startPuzzle);
+$("switch-sepolia-btn").addEventListener("click", () => quickSwitchNetwork("sepolia"));
+$("switch-arc-btn").addEventListener("click", () => quickSwitchNetwork("arc"));
+$("lang-tr-btn").addEventListener("click", () => setLanguage("tr"));
+$("lang-en-btn").addEventListener("click", () => setLanguage("en"));
+
+loadHeroImage();
+updateBridgeDirectionUI();
+refreshStakeStats();
+initFirebase();
+</script>
+</body>
+</html>
